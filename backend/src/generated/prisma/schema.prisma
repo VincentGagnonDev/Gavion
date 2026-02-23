@@ -1,0 +1,682 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SYSTEM_ADMIN
+  SALES_DIRECTOR
+  SALES_REPRESENTATIVE
+  PROJECT_DIRECTOR
+  AI_PROJECT_MANAGER
+  AI_EXPERT
+  CLIENT_ADMIN
+  CLIENT_USER
+}
+
+enum ClientLifecycleStage {
+  PROSPECT
+  ACTIVE_PROSPECT
+  ONBOARDING
+  IMPLEMENTATION
+  OPTIMIZATION
+  RENEWAL
+  EXPANSION
+  INACTIVE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  CONVERTED
+  LOST
+}
+
+enum OpportunityStage {
+  LEAD_INGESTION
+  QUALIFICATION
+  DISCOVERY
+  SOLUTION_DESIGN
+  PROPOSAL
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum ProjectStatus {
+  NOT_STARTED
+  INITIATION
+  DISCOVERY
+  DESIGN
+  DEVELOPMENT
+  DEPLOYMENT
+  OPTIMIZATION
+  HANDOVER
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  BLOCKED
+  IN_REVIEW
+  COMPLETE
+}
+
+enum TicketStatus {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  PENDING_CLIENT
+  RESOLVED
+  CLOSED
+}
+
+enum TicketSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TicketType {
+  TECHNICAL_ISSUE
+  HOW_TO_QUESTION
+  ENHANCEMENT_REQUEST
+  BILLING_INQUIRY
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+  CANCELLED
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  firstName    String    @map("first_name")
+  lastName     String    @map("last_name")
+  role         UserRole
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLogin    DateTime? @map("last_login")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  clientId String? @unique @map("client_id")
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  managedBy    User?   @relation("UserManager", fields: [managerId], references: [id])
+  managerId    String? @map("manager_id")
+  subordinates User[]  @relation("UserManager")
+
+  leads             Lead[]
+  opportunities     Opportunity[]
+  activities        Activity[]
+  projectTasks      ProjectTask[]      @relation("TaskAssignee")
+  projectMilestones ProjectMilestone[] @relation("MilestoneOwner")
+  tickets           Ticket[]
+  comments          Comment[]
+
+  @@map("users")
+}
+
+model Client {
+  id           String  @id @default(uuid())
+  name         String
+  legalName    String? @map("legal_name")
+  industry     String?
+  industryCode String? @map("industry_code")
+  size         String?
+  revenueBand  String? @map("revenue_band")
+  address      String?
+  city         String?
+  country      String?
+  phone        String?
+  website      String?
+
+  aiMaturityLevel  String?  @map("ai_maturity_level")
+  aiReadinessScore Int?     @map("ai_readiness_score")
+  technologyStack  String[] @map("technology_stack")
+
+  lifecycleStage ClientLifecycleStage @default(PROSPECT) @map("lifecycle_stage")
+  healthScore    Int                  @default(100) @map("health_score")
+  npsScore       Int?                 @map("nps_score")
+
+  accountExecutiveId String? @map("account_executive_id")
+
+  contractStartDate DateTime? @map("contract_start_date")
+  contractEndDate   DateTime? @map("contract_end_date")
+  autoRenewal       Boolean   @default(false) @map("auto_renewal")
+  renewalNoticeDays Int       @default(30) @map("renewal_notice_days")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  contacts      Contact[]
+  leads         Lead[]
+  opportunities Opportunity[]
+  projects      Project[]
+  tickets       Ticket[]
+  feedback      Feedback[]
+  aiSolutions   ClientSolution[]
+  users         User[]
+
+  @@map("clients")
+}
+
+model ClientSolution {
+  id       String @id @default(uuid())
+  clientId String @map("client_id")
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  solutionId String     @map("solution_id")
+  solution   AISolution @relation(fields: [solutionId], references: [id], onDelete: Cascade)
+
+  deployedAt DateTime? @map("deployed_at")
+  status     String    @default("ACTIVE")
+
+  @@unique([clientId, solutionId])
+  @@map("client_solutions")
+}
+
+model Contact {
+  id       String @id @default(uuid())
+  clientId String @map("client_id")
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  firstName String  @map("first_name")
+  lastName  String  @map("last_name")
+  email     String
+  phone     String?
+  jobTitle  String? @map("job_title")
+
+  isDecisionMaker Boolean @default(false) @map("is_decision_maker")
+  isInfluencer    Boolean @default(false) @map("is_influencer")
+  isTechnicalLead Boolean @default(false) @map("is_technical_lead")
+  isEndUser       Boolean @default(false) @map("is_end_user")
+  isBudgetHolder  Boolean @default(false) @map("is_budget_holder")
+
+  influenceLevel    Int       @default(50) @map("influence_level")
+  relationshipScore Int       @default(50) @map("relationship_score")
+  lastInteraction   DateTime? @map("last_interaction")
+  preferredChannel  String?   @map("preferred_channel")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  activities Activity[]
+
+  @@map("contacts")
+}
+
+model Lead {
+  id       String  @id @default(uuid())
+  clientId String? @map("client_id")
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  ownerId String @map("owner_id")
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  source        String
+  sourceDetails String?    @map("source_details")
+  status        LeadStatus @default(NEW)
+
+  companyName  String  @map("company_name")
+  contactName  String  @map("contact_name")
+  contactEmail String  @map("contact_email")
+  contactPhone String? @map("contact_phone")
+
+  industry    String?
+  companySize String? @map("company_size")
+
+  leadScore   Int     @default(0) @map("lead_score")
+  scoreTier   String  @default("Cold") @map("score_tier")
+  scoreReason String? @map("score_reason")
+
+  budgetRange     String? @map("budget_range")
+  timeline        String?
+  needDescription String? @map("need_description")
+
+  convertedAt DateTime? @map("converted_at")
+  lostAt      DateTime? @map("lost_at")
+  lossReason  String?   @map("loss_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  activities    Activity[]
+  opportunities Opportunity[]
+
+  @@map("leads")
+}
+
+model Opportunity {
+  id     String  @id @default(uuid())
+  leadId String? @map("lead_id")
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  clientId String? @map("client_id")
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  ownerId String @map("owner_id")
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  name  String
+  stage OpportunityStage @default(LEAD_INGESTION)
+
+  probability       Int       @default(10)
+  expectedCloseDate DateTime? @map("expected_close_date")
+  actualCloseDate   DateTime? @map("actual_close_date")
+
+  estimatedValue Float @default(0) @map("estimated_value")
+  weightedValue  Float @default(0) @map("weighted_value")
+
+  nextStep     String?   @map("next_step")
+  nextStepDate DateTime? @map("next_step_date")
+
+  lostReason String? @map("lost_reason")
+  wonReason  String? @map("won_reason")
+
+  solutionType String? @map("solution_type")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  activities Activity[]
+  proposals  Proposal[]
+  project    Project?
+
+  @@map("opportunities")
+}
+
+model Proposal {
+  id            String      @id @default(uuid())
+  opportunityId String      @map("opportunity_id")
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  version Int    @default(1)
+  title   String
+  content Json?
+
+  solutionDescription String? @map("solution_description")
+  implementationPlan  String? @map("implementation_plan")
+  timelineWeeks       Int?    @map("timeline_weeks")
+
+  basePrice  Float @default(0) @map("base_price")
+  discount   Float @default(0) @map("discount")
+  finalPrice Float @default(0) @map("final_price")
+
+  terms  String?
+  status String  @default("DRAFT")
+
+  approvalStatus String    @default("PENDING") @map("approval_status")
+  approvedBy     String?   @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+
+  signedAt    DateTime? @map("signed_at")
+  documentUrl String?   @map("document_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("proposals")
+}
+
+model Project {
+  id            String       @id @default(uuid())
+  opportunityId String?      @unique @map("opportunity_id")
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+
+  clientId String @map("client_id")
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  name        String
+  description String?
+  status      ProjectStatus @default(NOT_STARTED)
+
+  startDate     DateTime? @map("start_date")
+  endDate       DateTime? @map("end_date")
+  actualEndDate DateTime? @map("actual_end_date")
+
+  budget     Float @default(0)
+  actualCost Float @default(0) @map("actual_cost")
+
+  projectManagerId String? @map("project_manager_id")
+
+  solutionType String? @map("solution_type")
+
+  healthStatus String @default("GREEN") @map("health_status")
+
+  completionPercentage Int @default(0) @map("completion_percentage")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  milestones ProjectMilestone[]
+  tasks      ProjectTask[]
+  metrics    ProjectMetric[]
+
+  @@map("projects")
+}
+
+model ProjectMilestone {
+  id        String  @id @default(uuid())
+  projectId String  @map("project_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  status      MilestoneStatus @default(PENDING)
+
+  phase String?
+  order Int
+
+  plannedStartDate DateTime? @map("planned_start_date")
+  plannedEndDate   DateTime? @map("planned_end_date")
+  actualStartDate  DateTime? @map("actual_start_date")
+  actualEndDate    DateTime? @map("actual_end_date")
+
+  completionCriteria String? @map("completion_criteria")
+
+  ownerId String? @map("owner_id")
+  owner   User?   @relation("MilestoneOwner", fields: [ownerId], references: [id])
+
+  dependsOnId String? @map("depends_on_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("project_milestones")
+}
+
+model ProjectTask {
+  id        String  @id @default(uuid())
+  projectId String  @map("project_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  status      TaskStatus @default(NOT_STARTED)
+  priority    String     @default("MEDIUM")
+
+  phase String?
+
+  assigneeId String? @map("assignee_id")
+  assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  parentTaskId String? @map("parent_task_id")
+
+  plannedHours Float? @map("planned_hours")
+  actualHours  Float  @default(0) @map("actual_hours")
+
+  dueDate     DateTime? @map("due_date")
+  completedAt DateTime? @map("completed_at")
+
+  blockerReason String? @map("blocker_reason")
+
+  order Int
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("project_tasks")
+}
+
+model ProjectMetric {
+  id        String  @id @default(uuid())
+  projectId String  @map("project_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  metricName     String @map("metric_name")
+  metricCategory String @map("metric_category")
+
+  value Float
+  unit  String?
+
+  baselineValue Float? @map("baseline_value")
+  targetValue   Float? @map("target_value")
+
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  @@map("project_metrics")
+}
+
+model AISolution {
+  id String @id @default(uuid())
+
+  name        String
+  category    String
+  description String?
+
+  tagline         String?
+  longDescription String? @map("long_description")
+
+  targetIndustries String[] @map("target_industries")
+  targetFunctions  String[] @map("target_functions")
+
+  technicalRequirements String[] @map("technical_requirements")
+  integrationPoints     String[] @map("integration_points")
+
+  pricingModels        String[] @map("pricing_models")
+  typicalTimelineWeeks Int?     @map("typical_timeline_weeks")
+
+  useCases    String[]
+  caseStudies Json?
+
+  isActive     Boolean @default(true) @map("is_active")
+  displayOrder Int     @default(0) @map("display_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  modules         AISolutionModule[]
+  quotes          Quote[]
+  clientSolutions ClientSolution[]
+
+  @@map("ai_solutions")
+}
+
+model AISolutionModule {
+  id         String     @id @default(uuid())
+  solutionId String     @map("solution_id")
+  solution   AISolution @relation(fields: [solutionId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  basePrice   Float   @default(0) @map("base_price")
+  isOptional  Boolean @default(false) @map("is_optional")
+
+  @@map("ai_solution_modules")
+}
+
+model Quote {
+  id         String     @id @default(uuid())
+  solutionId String     @map("solution_id")
+  solution   AISolution @relation(fields: [solutionId], references: [id], onDelete: SetNull)
+
+  clientId String? @map("client_id")
+
+  quoteNumber String @unique @map("quote_number")
+  version     Int    @default(1)
+
+  status String @default("DRAFT")
+
+  scope         String?
+  timelineWeeks Int?    @map("timeline_weeks")
+
+  totalPrice Float @default(0) @map("total_price")
+
+  validUntil DateTime? @map("valid_until")
+
+  requestedBy String?   @map("requested_by")
+  requestedAt DateTime? @map("requested_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("quotes")
+}
+
+model Activity {
+  id String @id @default(uuid())
+
+  ownerId String @map("owner_id")
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  leadId String? @map("lead_id")
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  opportunityId String?      @map("opportunity_id")
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  contactId String?  @map("contact_id")
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  type        String
+  subject     String
+  description String?
+
+  scheduledAt     DateTime? @map("scheduled_at")
+  completedAt     DateTime? @map("completed_at")
+  durationMinutes Int?      @map("duration_minutes")
+
+  outcome   String?
+  sentiment String?
+  keyTopics String[] @map("key_topics")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("activities")
+}
+
+model Feedback {
+  id String @id @default(uuid())
+
+  clientId String @map("client_id")
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  projectId   String? @map("project_id")
+  milestoneId String? @map("milestone_id")
+
+  type     String
+  rating   Int
+  comments String?
+
+  deliveredOnTime Boolean? @map("delivered_on_time")
+  metExpectations Boolean? @map("met_expectations")
+  wouldRecommend  Boolean? @map("would_recommend")
+
+  responderName  String? @map("responder_name")
+  responderEmail String? @map("responder_email")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("feedback")
+}
+
+model Ticket {
+  id String @id @default(uuid())
+
+  clientId String @map("client_id")
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  assigneeId String? @map("assignee_id")
+  assignee   User?   @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  ticketNumber String @unique @map("ticket_number")
+  title        String
+  description  String
+
+  type     TicketType     @default(TECHNICAL_ISSUE)
+  severity TicketSeverity @default(MEDIUM)
+  status   TicketStatus   @default(NEW)
+
+  resolution String?
+  rootCause  String? @map("root_cause")
+
+  slaResponseDue   DateTime? @map("sla_response_due")
+  slaResolutionDue DateTime? @map("sla_resolution_due")
+  respondedAt      DateTime? @map("responded_at")
+  resolvedAt       DateTime? @map("resolved_at")
+  closedAt         DateTime? @map("closed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  comments TicketComment[]
+
+  @@map("tickets")
+}
+
+model TicketComment {
+  id       String @id @default(uuid())
+  ticketId String @map("ticket_id")
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  authorId String @map("author_id")
+
+  content String
+
+  isInternal Boolean @default(false) @map("is_internal")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("ticket_comments")
+}
+
+model Comment {
+  id String @id @default(uuid())
+
+  authorId String @map("author_id")
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  entityType String @map("entity_type")
+  entityId   String @map("entity_id")
+
+  content String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("comments")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  changes    Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("refresh_tokens")
+}
