@@ -1,9 +1,29 @@
 import { Router, Response, NextFunction } from 'express';
-import { db } from '../../config/database';
-import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
-import { OpportunityStage } from '../../generated/prisma';
+import { db } from '../config/database';
+import { authenticate, authorize, AuthRequest, authorizeResource } from '../middleware/auth';
+import { OpportunityStage } from '@prisma/client';
+import { body, param, validationResult } from 'express-validator';
 
 const router = Router();
+
+const validateOpportunityId = param('id').isUUID();
+
+const validateOpportunityCreate = [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('clientId').optional().isUUID(),
+  body('estimatedValue').optional().isFloat({ min: 0 }),
+  body('expectedCloseDate').optional().isISO8601(),
+  body('stage').optional().isIn(['LEAD_INGESTION', 'QUALIFICATION', 'DISCOVERY', 'SOLUTION_DESIGN', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST']),
+  body('probability').optional().isInt({ min: 0, max: 100 }),
+];
+
+const validateOpportunityUpdate = [
+  validateOpportunityId,
+  body('name').optional().trim(),
+  body('stage').optional().isIn(['LEAD_INGESTION', 'QUALIFICATION', 'DISCOVERY', 'SOLUTION_DESIGN', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST']),
+  body('estimatedValue').optional().isFloat({ min: 0 }),
+  body('probability').optional().isInt({ min: 0, max: 100 }),
+];
 
 router.use(authenticate);
 
@@ -20,7 +40,7 @@ const stageProbabilities: Record<OpportunityStage, number> = {
 
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { stage, ownerId, search, page = 1, limit = 20 } = req.query;
+    const { stage, ownerId, search, page = 1, limit = 20 } = req.query as any;
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
@@ -100,10 +120,14 @@ router.get('/pipeline', async (req: AuthRequest, res: Response, next: NextFuncti
   }
 });
 
-router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/:id', 
+  validateOpportunityId,
+  authenticate,
+  authorizeResource('Opportunity', 'ownerId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const opportunity = await db.opportunity.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       include: {
         owner: { select: { id: true, firstName: true, lastName: true, email: true } },
         client: true,
@@ -120,7 +144,10 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
   }
 });
 
-router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/', 
+  authenticate,
+  validateOpportunityCreate,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { name, clientId, leadId, estimatedValue, expectedCloseDate, solutionType, nextStep } = req.body;
 
@@ -139,7 +166,11 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
   }
 });
 
-router.put('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.put('/:id', 
+  validateOpportunityUpdate,
+  authenticate,
+  authorizeResource('Opportunity', 'ownerId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { name, stage, probability, estimatedValue, expectedCloseDate, 
       nextStep, nextStepDate, solutionType, lostReason, wonReason } = req.body;
@@ -150,7 +181,7 @@ router.put('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
     }
 
     const opportunity = await db.opportunity.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: {
         name, stage, probability, estimatedValue, expectedCloseDate: expectedCloseDate ? new Date(expectedCloseDate) : undefined,
         nextStep, nextStepDate: nextStepDate ? new Date(nextStepDate) : undefined,
@@ -164,13 +195,17 @@ router.put('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
   }
 });
 
-router.post('/:id/close-won', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/:id/close-won', 
+  validateOpportunityId,
+  authenticate,
+  authorizeResource('Opportunity', 'ownerId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { createProject } = req.body;
 
     const [opportunity] = await db.$transaction([
       db.opportunity.update({
-        where: { id: req.params.id },
+        where: { id: req.params.id as string },
         data: { 
           stage: 'CLOSED_WON', 
           actualCloseDate: new Date(),
@@ -199,12 +234,16 @@ router.post('/:id/close-won', async (req: AuthRequest, res: Response, next: Next
   }
 });
 
-router.post('/:id/close-lost', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/:id/close-lost', 
+  validateOpportunityId,
+  authenticate,
+  authorizeResource('Opportunity', 'ownerId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { lostReason } = req.body;
 
     const opportunity = await db.opportunity.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: { 
         stage: 'CLOSED_LOST', 
         actualCloseDate: new Date(),

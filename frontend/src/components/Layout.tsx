@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, TrendingUp, Briefcase, 
-  Package, FolderKanban, Headphones, BarChart3, LogOut 
+  Package, FolderKanban, Headphones, BarChart3, LogOut, FileText, CreditCard 
 } from 'lucide-react';
 import { useAuth } from '../App';
 
@@ -12,6 +12,8 @@ const navItems = [
   { to: '/opportunities', icon: Briefcase, label: 'Opportunities' },
   { to: '/projects', icon: FolderKanban, label: 'Projects' },
   { to: '/solutions', icon: Package, label: 'Solutions' },
+  { to: '/quotes', icon: FileText, label: 'Quotes' },
+  { to: '/invoices', icon: CreditCard, label: 'Invoices' },
   { to: '/tickets', icon: Headphones, label: 'Support' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
 ];

@@ -104,16 +104,18 @@ enum MilestoneStatus {
 }
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  firstName    String    @map("first_name")
-  lastName     String    @map("last_name")
-  role         UserRole
-  isActive     Boolean   @default(true) @map("is_active")
-  lastLogin    DateTime? @map("last_login")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  passwordHash        String    @map("password_hash")
+  firstName           String    @map("first_name")
+  lastName            String    @map("last_name")
+  role                UserRole
+  isActive            Boolean   @default(true) @map("is_active")
+  lastLogin           DateTime? @map("last_login")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   clientId String? @unique @map("client_id")
   client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
@@ -122,13 +124,16 @@ model User {
   managerId    String? @map("manager_id")
   subordinates User[]  @relation("UserManager")
 
-  leads             Lead[]
-  opportunities     Opportunity[]
-  activities        Activity[]
-  projectTasks      ProjectTask[]      @relation("TaskAssignee")
-  projectMilestones ProjectMilestone[] @relation("MilestoneOwner")
-  tickets           Ticket[]
-  comments          Comment[]
+  leads               Lead[]
+  opportunities       Opportunity[]
+  activities          Activity[]
+  projectTasks        ProjectTask[]        @relation("TaskAssignee")
+  projectMilestones   ProjectMilestone[]   @relation("MilestoneOwner")
+  tickets             Ticket[]
+  comments            Comment[]
+  managedProjects     Project[]
+  refreshTokens       RefreshToken[]       @relation("UserRefreshTokens")
+  passwordResetTokens PasswordResetToken[] @relation("UserPasswordResetTokens")
 
   @@map("users")
 }
@@ -136,6 +141,7 @@ model User {
 model Client {
   id           String  @id @default(uuid())
   name         String
+  email        String? @unique
   legalName    String? @map("legal_name")
   industry     String?
   industryCode String? @map("industry_code")
@@ -174,6 +180,9 @@ model Client {
   feedback      Feedback[]
   aiSolutions   ClientSolution[]
   users         User[]
+  invoices      Invoice[]
+  subscriptions Subscription[]
+  quotes        Quote[]
 
   @@map("clients")
 }
@@ -357,6 +366,7 @@ model Project {
   actualCost Float @default(0) @map("actual_cost")
 
   projectManagerId String? @map("project_manager_id")
+  projectManager   User?   @relation(fields: [projectManagerId], references: [id], onDelete: SetNull)
 
   solutionType String? @map("solution_type")
 
@@ -510,6 +520,7 @@ model Quote {
   solution   AISolution @relation(fields: [solutionId], references: [id], onDelete: SetNull)
 
   clientId String? @map("client_id")
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   quoteNumber String @unique @map("quote_number")
   version     Int    @default(1)
@@ -528,6 +539,8 @@ model Quote {
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+
+  invoice Invoice?
 
   @@map("quotes")
 }
@@ -674,9 +687,201 @@ model AuditLog {
 model RefreshToken {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")
+  user      User     @relation("UserRefreshTokens", fields: [userId], references: [id], onDelete: Cascade)
   token     String   @unique
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation("UserPasswordResetTokens", fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("password_reset_tokens")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+enum InvoiceType {
+  INVOICE
+  RECURRING
+}
+
+model Invoice {
+  id String @id @default(uuid())
+
+  clientId String @map("client_id")
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  quoteId String? @unique @map("quote_id")
+  quote   Quote?  @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+
+  invoiceNumber String      @unique @map("invoice_number")
+  invoiceType   InvoiceType @default(INVOICE) @map("invoice_type")
+
+  status InvoiceStatus @default(DRAFT)
+
+  issueDate DateTime  @default(now()) @map("issue_date")
+  dueDate   DateTime? @map("due_date")
+  paidDate  DateTime? @map("paid_date")
+
+  subtotal  Float @default(0)
+  taxRate   Float @default(0.14975) // Quebec TPS+TVQ = 14.975%
+  taxAmount Float @default(0)
+  tpsAmount Float @default(0) @map("tps_amount")
+  tvqAmount Float @default(0) @map("tvq_amount")
+  total     Float @default(0)
+
+  description String?
+  lineItems   Json?   @map("line_items")
+
+  stripePaymentId   String? @map("stripe_payment_id")
+  stripePaymentLink String? @map("stripe_payment_link")
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  payments Payment[]
+  receipts Receipt[]
+
+  @@map("invoices")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  PAST_DUE
+  TRIALING
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+model Subscription {
+  id String @id @default(uuid())
+
+  clientId String @map("client_id")
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  stripeSubId      String? @unique @map("stripe_sub_id")
+  stripeCustomerId String? @map("stripe_customer_id")
+
+  status       SubscriptionStatus @default(ACTIVE)
+  billingCycle BillingCycle       @default(MONTHLY) @map("billing_cycle")
+
+  planName  String @map("plan_name")
+  amount    Float  @default(0)
+  taxRate   Float  @default(0.14975)
+  taxAmount Float  @default(0)
+  total     Float  @default(0)
+
+  startDate       DateTime  @default(now()) @map("start_date")
+  nextBillingDate DateTime? @map("next_billing_date")
+  cancelledDate   DateTime? @map("cancelled_date")
+
+  stripePaymentLink String? @map("stripe_payment_link")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  payments Payment[]
+
+  @@map("subscriptions")
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  BANK_TRANSFER
+  PAYPAL
+}
+
+model Payment {
+  id String @id @default(uuid())
+
+  invoiceId String?  @map("invoice_id")
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  subscriptionId String?       @unique @map("subscription_id")
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  stripePaymentId       String? @unique @map("stripe_payment_id")
+  stripePaymentIntentId String? @unique @map("stripe_payment_intent_id")
+
+  status    PaymentStatus @default(PENDING)
+  amount    Float         @default(0)
+  taxAmount Float         @default(0)
+  total     Float         @default(0)
+  currency  String        @default("cad")
+
+  paymentMethod PaymentMethod @default(CREDIT_CARD) @map("payment_method")
+
+  receiptUrl String? @map("receipt_url")
+
+  paidAt   DateTime? @map("paid_at")
+  failedAt DateTime? @map("failed_at")
+
+  errorMessage String? @map("error_message")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  receipt Receipt?
+
+  @@map("payments")
+}
+
+model Receipt {
+  id String @id @default(uuid())
+
+  invoiceId String?  @map("invoice_id")
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  paymentId String?  @unique @map("payment_id")
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  receiptNumber String @unique @map("receipt_number")
+
+  clientName    String  @map("client_name")
+  clientAddress String? @map("client_address")
+  clientEmail   String? @map("client_email")
+
+  subtotal  Float @default(0)
+  tpsAmount Float @default(0) @map("tps_amount") // 5% federal tax
+  tvqAmount Float @default(0) @map("tvq_amount") // 9.975% Quebec tax
+  total     Float @default(0)
+
+  paymentMethod String? @map("payment_method")
+  last4         String? // Last 4 digits of card
+
+  issuedAt DateTime @default(now()) @map("issued_at")
+
+  @@map("receipts")
 }

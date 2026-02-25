@@ -131,6 +131,8 @@ exports.Prisma.UserScalarFieldEnum = {
   role: 'role',
   isActive: 'isActive',
   lastLogin: 'lastLogin',
+  failedLoginAttempts: 'failedLoginAttempts',
+  lockedUntil: 'lockedUntil',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   clientId: 'clientId',
@@ -140,6 +142,7 @@ exports.Prisma.UserScalarFieldEnum = {
 exports.Prisma.ClientScalarFieldEnum = {
   id: 'id',
   name: 'name',
+  email: 'email',
   legalName: 'legalName',
   industry: 'industry',
   industryCode: 'industryCode',
@@ -479,6 +482,97 @@ exports.Prisma.RefreshTokenScalarFieldEnum = {
   createdAt: 'createdAt'
 };
 
+exports.Prisma.PasswordResetTokenScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  token: 'token',
+  expiresAt: 'expiresAt',
+  usedAt: 'usedAt',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.InvoiceScalarFieldEnum = {
+  id: 'id',
+  clientId: 'clientId',
+  quoteId: 'quoteId',
+  invoiceNumber: 'invoiceNumber',
+  invoiceType: 'invoiceType',
+  status: 'status',
+  issueDate: 'issueDate',
+  dueDate: 'dueDate',
+  paidDate: 'paidDate',
+  subtotal: 'subtotal',
+  taxRate: 'taxRate',
+  taxAmount: 'taxAmount',
+  tpsAmount: 'tpsAmount',
+  tvqAmount: 'tvqAmount',
+  total: 'total',
+  description: 'description',
+  lineItems: 'lineItems',
+  stripePaymentId: 'stripePaymentId',
+  stripePaymentLink: 'stripePaymentLink',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SubscriptionScalarFieldEnum = {
+  id: 'id',
+  clientId: 'clientId',
+  stripeSubId: 'stripeSubId',
+  stripeCustomerId: 'stripeCustomerId',
+  status: 'status',
+  billingCycle: 'billingCycle',
+  planName: 'planName',
+  amount: 'amount',
+  taxRate: 'taxRate',
+  taxAmount: 'taxAmount',
+  total: 'total',
+  startDate: 'startDate',
+  nextBillingDate: 'nextBillingDate',
+  cancelledDate: 'cancelledDate',
+  stripePaymentLink: 'stripePaymentLink',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.PaymentScalarFieldEnum = {
+  id: 'id',
+  invoiceId: 'invoiceId',
+  subscriptionId: 'subscriptionId',
+  stripePaymentId: 'stripePaymentId',
+  stripePaymentIntentId: 'stripePaymentIntentId',
+  status: 'status',
+  amount: 'amount',
+  taxAmount: 'taxAmount',
+  total: 'total',
+  currency: 'currency',
+  paymentMethod: 'paymentMethod',
+  receiptUrl: 'receiptUrl',
+  paidAt: 'paidAt',
+  failedAt: 'failedAt',
+  errorMessage: 'errorMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ReceiptScalarFieldEnum = {
+  id: 'id',
+  invoiceId: 'invoiceId',
+  paymentId: 'paymentId',
+  receiptNumber: 'receiptNumber',
+  clientName: 'clientName',
+  clientAddress: 'clientAddress',
+  clientEmail: 'clientEmail',
+  subtotal: 'subtotal',
+  tpsAmount: 'tpsAmount',
+  tvqAmount: 'tvqAmount',
+  total: 'total',
+  paymentMethod: 'paymentMethod',
+  last4: 'last4',
+  issuedAt: 'issuedAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -599,6 +693,48 @@ exports.TicketStatus = exports.$Enums.TicketStatus = {
   CLOSED: 'CLOSED'
 };
 
+exports.InvoiceType = exports.$Enums.InvoiceType = {
+  INVOICE: 'INVOICE',
+  RECURRING: 'RECURRING'
+};
+
+exports.InvoiceStatus = exports.$Enums.InvoiceStatus = {
+  DRAFT: 'DRAFT',
+  SENT: 'SENT',
+  PAID: 'PAID',
+  OVERDUE: 'OVERDUE',
+  CANCELLED: 'CANCELLED',
+  REFUNDED: 'REFUNDED'
+};
+
+exports.SubscriptionStatus = exports.$Enums.SubscriptionStatus = {
+  ACTIVE: 'ACTIVE',
+  PAUSED: 'PAUSED',
+  CANCELLED: 'CANCELLED',
+  PAST_DUE: 'PAST_DUE',
+  TRIALING: 'TRIALING'
+};
+
+exports.BillingCycle = exports.$Enums.BillingCycle = {
+  MONTHLY: 'MONTHLY',
+  QUARTERLY: 'QUARTERLY',
+  YEARLY: 'YEARLY'
+};
+
+exports.PaymentStatus = exports.$Enums.PaymentStatus = {
+  PENDING: 'PENDING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  REFUNDED: 'REFUNDED',
+  CANCELLED: 'CANCELLED'
+};
+
+exports.PaymentMethod = exports.$Enums.PaymentMethod = {
+  CREDIT_CARD: 'CREDIT_CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  PAYPAL: 'PAYPAL'
+};
+
 exports.Prisma.ModelName = {
   User: 'User',
   Client: 'Client',
@@ -620,7 +756,12 @@ exports.Prisma.ModelName = {
   TicketComment: 'TicketComment',
   Comment: 'Comment',
   AuditLog: 'AuditLog',
-  RefreshToken: 'RefreshToken'
+  RefreshToken: 'RefreshToken',
+  PasswordResetToken: 'PasswordResetToken',
+  Invoice: 'Invoice',
+  Subscription: 'Subscription',
+  Payment: 'Payment',
+  Receipt: 'Receipt'
 };
 
 /**

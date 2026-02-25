@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Build coverage
+coverage/
+.nyc_output/
+
+# Testing
+test-results/
+playwright-report/
+
+# Misc
+.cache/
+.temp/
+
+# Prisma
+prisma/migrations/
+backend/generated/
+frontend/src/types/
+!.gitkeep

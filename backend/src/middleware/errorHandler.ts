@@ -15,11 +15,18 @@ export class AppError extends Error {
 
 export const errorHandler = (
   err: Error | AppError,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ) => {
-  console.error('Error:', err);
+  const requestId = (req as any).requestId || 'unknown';
+
+  if (process.env.NODE_ENV === 'development') {
+    console.error(`[${requestId}] Error:`, err);
+  } else {
+    // Production: log minimal info
+    console.error(`[${requestId}] ${err.message} (${err.name})`);
+  }
 
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({

@@ -1,9 +1,66 @@
 import { Router, Response, NextFunction } from 'express';
-import { db } from '../../config/database';
-import { authenticate, authorize, AuthRequest, isSalesUser, isAdmin, isProjectUser } from '../../middleware/auth';
-import { Prisma } from '../../generated/prisma';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { db } from '../config/database';
+import { authenticate, authorize, AuthRequest, isSalesUser, isAdmin, isProjectUser, authorizeResource } from '../middleware/auth';
+import { Prisma } from '@prisma/client';
+import { sendPasswordResetEmail } from '../services/email';
+import { body, param, validationResult } from 'express-validator';
 
 const router = Router();
+
+const validateClientId = param('id').isUUID();
+const validateContactId = param('contactId').isUUID();
+
+const validateClientCreate = [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('email').optional().isEmail(),
+  body('industry').optional().trim(),
+  body('lifecycleStage').optional().isIn(['PROSPECT', 'ACTIVE_PROSPECT', 'ONBOARDING', 'IMPLEMENTATION', 'OPTIMIZATION', 'RENEWAL', 'EXPANSION', 'INACTIVE']),
+  body('aiReadinessScore').optional().isInt({ min: 0, max: 100 }),
+  body('healthScore').optional().isInt({ min: 0, max: 100 }),
+];
+
+const validateClientUpdate = [
+  validateClientId,
+  body('name').optional().trim(),
+  body('email').optional().isEmail(),
+  body('industry').optional().trim(),
+  body('lifecycleStage').optional().isIn(['PROSPECT', 'ACTIVE_PROSPECT', 'ONBOARDING', 'IMPLEMENTATION', 'OPTIMIZATION', 'RENEWAL', 'EXPANSION', 'INACTIVE']),
+  body('healthScore').optional().isInt({ min: 0, max: 100 }),
+  body('npsScore').optional().isInt({ min: -100, max: 100 }),
+  body('isActive').optional().isBoolean(),
+];
+
+const validateContactCreate = [
+  validateClientId,
+  body('firstName').trim().notEmpty().withMessage('First name is required'),
+  body('lastName').trim().notEmpty().withMessage('Last name is required'),
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('phone').optional().trim(),
+  body('jobTitle').optional().trim(),
+];
+
+const validateContactUpdate = [
+  validateClientId,
+  validateContactId,
+  body('firstName').optional().trim(),
+  body('lastName').optional().trim(),
+  body('email').optional().isEmail(),
+  body('phone').optional().trim(),
+  body('influenceLevel').optional().isInt({ min: 0, max: 100 }),
+  body('relationshipScore').optional().isInt({ min: 0, max: 100 }),
+  body('isActive').optional().isBoolean(),
+];
+
+function generatePassword(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+  let password = '';
+  for (let i = 0; i < 12; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
 
 router.use(authenticate);
 
@@ -68,7 +125,11 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   }
 });
 
-router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/:id', 
+  validateClientId,
+  authenticate,
+  authorizeResource('Client', 'accountExecutiveId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const client = await db.client.findUnique({
       where: { id: req.params.id },
@@ -118,7 +179,8 @@ router.post('/', authorize('SYSTEM_ADMIN', 'SALES_DIRECTOR', 'SALES_REPRESENTATI
       name, legalName, industry, industryCode, size, revenueBand,
       address, city, country, phone, website,
       aiMaturityLevel, technologyStack, lifecycleStage,
-      contractStartDate, contractEndDate, autoRenewal
+      contractStartDate, contractEndDate, autoRenewal,
+      sendWelcome, contactEmail, contactFirstName, contactLastName
     } = req.body;
 
     const client = await db.client.create({
@@ -144,13 +206,72 @@ router.post('/', authorize('SYSTEM_ADMIN', 'SALES_DIRECTOR', 'SALES_REPRESENTATI
       }
     });
 
-    res.status(201).json(client);
+    let userCreated = null;
+    let emailSent = false;
+
+     if (sendWelcome && contactEmail) {
+       const tempPassword = generatePassword();
+       const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+       const existingUser = await db.user.findUnique({ where: { email: contactEmail } });
+       
+       if (!existingUser) {
+         userCreated = await db.user.create({
+           data: {
+             email: contactEmail,
+             passwordHash,
+             firstName: contactFirstName || name.split(' ')[0],
+             lastName: contactLastName || name.split(' ').slice(1).join(' ') || 'Admin',
+             role: 'CLIENT_ADMIN',
+             clientId: client.id
+           },
+           select: {
+             id: true,
+             email: true,
+             firstName: true,
+             lastName: true,
+             role: true
+           }
+         });
+
+         // Generate password reset token
+         const resetToken = crypto.randomBytes(32).toString('hex');
+         const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+         await db.passwordResetToken.create({
+           data: {
+             userId: userCreated.id,
+             token: resetToken,
+             expiresAt
+           }
+         });
+
+         const resetUrl = `${process.env.APP_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+         
+         await sendPasswordResetEmail({
+           to: contactEmail,
+           firstName: userCreated.firstName,
+           resetUrl
+         });
+
+         emailSent = true;
+       }
+     }
+
+    res.status(201).json({
+      ...client,
+      userCreated,
+      welcomeEmailSent: emailSent
+    });
   } catch (error) {
     next(error);
   }
-);
+});
 
-router.put('/:id', authorize('SYSTEM_ADMIN', 'SALES_DIRECTOR', 'SALES_REPRESENTATIVE'), 
+router.put('/:id', 
+  authorize('SYSTEM_ADMIN', 'SALES_DIRECTOR', 'SALES_REPRESENTATIVE'),
+  validateClientUpdate,
+  authorizeResource('Client', 'accountExecutiveId'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const {
@@ -178,7 +299,7 @@ router.put('/:id', authorize('SYSTEM_ADMIN', 'SALES_DIRECTOR', 'SALES_REPRESENTA
   } catch (error) {
     next(error);
   }
-);
+});
 
 router.delete('/:id', authorize('SYSTEM_ADMIN'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -193,7 +314,11 @@ router.delete('/:id', authorize('SYSTEM_ADMIN'), async (req: AuthRequest, res: R
   }
 });
 
-router.post('/:id/contacts', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/:id/contacts', 
+  authenticate,
+  validateContactCreate,
+  authorizeResource('Client', 'accountExecutiveId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const {
       firstName, lastName, email, phone, jobTitle,
@@ -221,7 +346,11 @@ router.post('/:id/contacts', async (req: AuthRequest, res: Response, next: NextF
   }
 });
 
-router.put('/:id/contacts/:contactId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.put('/:id/contacts/:contactId', 
+  authenticate,
+  validateContactUpdate,
+  authorizeResource('Client', 'accountExecutiveId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const {
       firstName, lastName, email, phone, jobTitle,
@@ -244,7 +373,11 @@ router.put('/:id/contacts/:contactId', async (req: AuthRequest, res: Response, n
   }
 });
 
-router.get('/:id/health', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/:id/health', 
+  validateClientId,
+  authenticate,
+  authorizeResource('Client', 'accountExecutiveId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const client = await db.client.findUnique({
       where: { id: req.params.id },

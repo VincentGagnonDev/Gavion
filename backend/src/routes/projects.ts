@@ -1,9 +1,84 @@
 import { Router, Response, NextFunction } from 'express';
-import { db } from '../../config/database';
-import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
-import { ProjectStatus, TaskStatus, MilestoneStatus } from '../../generated/prisma';
+import { db } from '../config/database';
+import { authenticate, authorize, AuthRequest, authorizeResource } from '../middleware/auth';
+import { ProjectStatus, TaskStatus, MilestoneStatus } from '@prisma/client';
+import { body, param, validationResult } from 'express-validator';
 
 const router = Router();
+
+const validateProjectId = param('id').isUUID();
+const validateMilestoneId = param('milestoneId').isUUID();
+const validateTaskId = param('taskId').isUUID();
+
+const validateProjectCreate = [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('clientId').isUUID().withMessage('Valid client ID required'),
+  body('projectManagerId').optional().isUUID(),
+  body('startDate').optional().isISO8601(),
+  body('targetDate').optional().isISO8601(),
+  body('budget').optional().isFloat({ min: 0 }),
+  body('status').optional().isIn(['NOT_STARTED', 'PLANNING', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED']),
+];
+
+const validateProjectUpdate = [
+  validateProjectId,
+  body('name').optional().trim(),
+  body('status').optional().isIn(['NOT_STARTED', 'PLANNING', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED']),
+  body('startDate').optional().isISO8601(),
+  body('targetDate').optional().isISO8601(),
+  body('budget').optional().isFloat({ min: 0 }),
+  body('actualCost').optional().isFloat({ min: 0 }),
+  body('healthStatus').optional().isIn(['GREEN', 'YELLOW', 'RED']),
+];
+
+const validateMilestoneCreate = [
+  validateProjectId,
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('targetDate').isISO8601().withMessage('Target date is required'),
+  body('description').optional().trim(),
+  body('status').optional().isIn(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'DELAYED', 'CANCELLED']),
+];
+
+const validateMilestoneUpdate = [
+  validateProjectId,
+  validateMilestoneId,
+  body('name').optional().trim(),
+  body('targetDate').optional().isISO8601(),
+  body('description').optional().trim(),
+  body('status').optional().isIn(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'DELAYED', 'CANCELLED']),
+  body('completionPercentage').optional().isInt({ min: 0, max: 100 }),
+];
+
+const validateTaskCreate = [
+  validateProjectId,
+  body('title').trim().notEmpty().withMessage('Title is required'),
+  body('description').optional().trim(),
+  body('assigneeId').optional().isUUID(),
+  body('dueDate').optional().isISO8601(),
+  body('priority').optional().isIn(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
+  body('status').optional().isIn(['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE', 'BLOCKED']),
+];
+
+const validateTaskUpdate = [
+  validateProjectId,
+  validateTaskId,
+  body('title').optional().trim(),
+  body('description').optional().trim(),
+  body('assigneeId').optional().isUUID(),
+  body('dueDate').optional().isISO8601(),
+  body('priority').optional().isIn(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
+  body('status').optional().isIn(['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE', 'BLOCKED']),
+  body('estimatedHours').optional().isFloat({ min: 0 }),
+  body('actualHours').optional().isFloat({ min: 0 }),
+];
+
+const validateMetricsCreate = [
+  validateProjectId,
+  body('metricType').trim().notEmpty().withMessage('Metric type is required'),
+  body('value').isNumeric().withMessage('Value is required'),
+  body('unit').optional().trim(),
+  body('recordedAt').optional().isISO8601(),
+];
 
 router.use(authenticate);
 
@@ -86,7 +161,11 @@ router.get('/dashboard', async (req: AuthRequest, res: Response, next: NextFunct
   }
 });
 
-router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/:id', 
+  validateProjectId,
+  authenticate,
+  authorizeResource('Project', 'clientId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await db.project.findUnique({
       where: { id: req.params.id },
@@ -133,7 +212,10 @@ router.post('/', authorize('SYSTEM_ADMIN', 'PROJECT_DIRECTOR', 'AI_PROJECT_MANAG
   }
 });
 
-router.put('/:id', authorize('SYSTEM_ADMIN', 'PROJECT_DIRECTOR', 'AI_PROJECT_MANAGER'),
+router.put('/:id', 
+  authorize('SYSTEM_ADMIN', 'PROJECT_DIRECTOR', 'AI_PROJECT_MANAGER'),
+  validateProjectUpdate,
+  authorizeResource('Project', 'clientId'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { name, description, status, startDate, endDate, budget, actualCost, 
@@ -156,7 +238,11 @@ router.put('/:id', authorize('SYSTEM_ADMIN', 'PROJECT_DIRECTOR', 'AI_PROJECT_MAN
   }
 });
 
-router.post('/:id/milestones', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/:id/milestones', 
+  validateMilestoneCreate,
+  authenticate,
+  authorizeResource('Project', 'clientId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { name, description, phase, order, plannedStartDate, plannedEndDate, ownerId } = req.body;
 
@@ -176,7 +262,11 @@ router.post('/:id/milestones', async (req: AuthRequest, res: Response, next: Nex
   }
 });
 
-router.put('/:id/milestones/:milestoneId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.put('/:id/milestones/:milestoneId', 
+  validateMilestoneUpdate,
+  authenticate,
+  authorizeResource('Project', 'clientId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { status, actualStartDate, actualEndDate, ownerId } = req.body;
 
@@ -192,7 +282,11 @@ router.put('/:id/milestones/:milestoneId', async (req: AuthRequest, res: Respons
   }
 });
 
-router.post('/:id/tasks', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/:id/tasks', 
+  validateTaskCreate,
+  authenticate,
+  authorizeResource('Project', 'clientId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { title, description, phase, assigneeId, parentTaskId, plannedHours, dueDate, priority } = req.body;
 
@@ -202,7 +296,7 @@ router.post('/:id/tasks', async (req: AuthRequest, res: Response, next: NextFunc
         title, description, phase, assigneeId, parentTaskId,
         plannedHours, dueDate: dueDate ? new Date(dueDate) : null,
         priority: priority || 'MEDIUM', status: 'NOT_STARTED'
-      }
+      } as any
     });
 
     res.status(201).json(task);
@@ -211,7 +305,11 @@ router.post('/:id/tasks', async (req: AuthRequest, res: Response, next: NextFunc
   }
 });
 
-router.put('/:id/tasks/:taskId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.put('/:id/tasks/:taskId', 
+  validateTaskUpdate,
+  authenticate,
+  authorizeResource('Project', 'clientId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { title, description, status, priority, assigneeId, plannedHours, actualHours, dueDate, blockerReason } = req.body;
 
@@ -232,7 +330,11 @@ router.put('/:id/tasks/:taskId', async (req: AuthRequest, res: Response, next: N
   }
 });
 
-router.post('/:id/metrics', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/:id/metrics', 
+  validateMetricsCreate,
+  authenticate,
+  authorizeResource('Project', 'clientId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { metricName, metricCategory, value, unit, baselineValue, targetValue } = req.body;
 

@@ -1,9 +1,30 @@
 import { Router, Response, NextFunction } from 'express';
-import { db } from '../../config/database';
-import { authenticate, authorize, AuthRequest, isAdmin, isSalesUser } from '../../middleware/auth';
-import { UserRole } from '../../generated/prisma';
+import { db } from '../config/database';
+import { authenticate, authorize, AuthRequest, isAdmin, isSalesUser, authorizeResource } from '../middleware/auth';
+import { UserRole } from '@prisma/client';
+import { body, param, validationResult } from 'express-validator';
 
 const router = Router();
+
+const validateUserId = param('id').isUUID();
+
+const validateUserUpdate = [
+  validateUserId,
+  body('firstName').optional().trim(),
+  body('lastName').optional().trim(),
+  body('role').optional().isIn(['SYSTEM_ADMIN', 'SALES_DIRECTOR', 'SALES_REPRESENTATIVE', 'PROJECT_DIRECTOR', 'AI_PROJECT_MANAGER', 'AI_EXPERT', 'CLIENT_ADMIN', 'CLIENT_USER']),
+  body('isActive').optional().isBoolean(),
+  body('managerId').optional().isUUID(),
+];
+
+const validateUserCreate = [
+  body('email').isEmail().normalizeEmail(),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('firstName').trim().notEmpty(),
+  body('lastName').trim().notEmpty(),
+  body('role').isIn(['SYSTEM_ADMIN', 'SALES_DIRECTOR', 'SALES_REPRESENTATIVE', 'PROJECT_DIRECTOR', 'AI_PROJECT_MANAGER', 'AI_EXPERT', 'CLIENT_ADMIN', 'CLIENT_USER']),
+  body('managerId').optional().isUUID(),
+];
 
 router.use(authenticate);
 
@@ -68,35 +89,47 @@ router.get('/', authorize('SYSTEM_ADMIN'), async (req: AuthRequest, res: Respons
   }
 });
 
-router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const user = await db.user.findUnique({
-      where: { id: req.params.id },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isActive: true,
-        lastLogin: true,
-        createdAt: true,
-        managedBy: { select: { id: true, firstName: true, lastName: true } },
-        subordinates: { select: { id: true, firstName: true, lastName: true, email: true } }
+router.get('/:id', 
+  validateUserId,
+  authenticate,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      // Users can view themselves or SYSTEM_ADMIN can view anyone
+      if (req.user?.id !== req.params.id && req.user?.role !== 'SYSTEM_ADMIN') {
+        return res.status(403).json({ error: 'Access denied' });
       }
-    });
-    
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json(user);
-  } catch (error) {
-    next(error);
-  }
-});
 
-router.post('/', authorize('SYSTEM_ADMIN'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+      const user = await db.user.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          isActive: true,
+          lastLogin: true,
+          createdAt: true,
+          managedBy: { select: { id: true, firstName: true, lastName: true } },
+          subordinates: { select: { id: true, firstName: true, lastName: true, email: true } }
+        }
+      });
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      res.json(user);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+router.post('/', 
+  authenticate,
+  validateUserCreate,
+  authorize('SYSTEM_ADMIN'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { email, password, firstName, lastName, role, managerId } = req.body;
 
@@ -133,32 +166,50 @@ router.post('/', authorize('SYSTEM_ADMIN'), async (req: AuthRequest, res: Respon
   }
 });
 
-router.put('/:id', authorize('SYSTEM_ADMIN'), async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { firstName, lastName, role, isActive, managerId } = req.body;
-
-    const user = await db.user.update({
-      where: { id: req.params.id },
-      data: { firstName, lastName, role, isActive, managerId },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isActive: true,
-        updatedAt: true
+router.put('/:id', 
+  authenticate,
+  validateUserUpdate,
+  authorize('SYSTEM_ADMIN'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      // Users can update themselves or SYSTEM_ADMIN can update anyone
+      if (req.user?.id !== req.params.id && req.user?.role !== 'SYSTEM_ADMIN') {
+        return res.status(403).json({ error: 'Access denied' });
       }
-    });
 
-    res.json(user);
-  } catch (error) {
-    next(error);
-  }
-});
+      const { firstName, lastName, role, isActive, managerId } = req.body;
 
-router.delete('/:id', authorize('SYSTEM_ADMIN'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+      const user = await db.user.update({
+        where: { id: req.params.id },
+        data: { firstName, lastName, role, isActive, managerId },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          isActive: true,
+          updatedAt: true
+        }
+      });
+
+      res.json(user);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+router.delete('/:id', 
+  validateUserId,
+  authenticate,
+  authorize('SYSTEM_ADMIN'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    // Prevent self-deactivation
+    if (req.user?.id === req.params.id) {
+      return res.status(400).json({ error: 'Cannot deactivate yourself' });
+    }
+    
     await db.user.update({
       where: { id: req.params.id },
       data: { isActive: false }

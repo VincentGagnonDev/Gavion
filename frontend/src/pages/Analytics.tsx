@@ -1,16 +1,15 @@
 import { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, Users, FolderKanban, DollarSign } from 'lucide-react';
 import { analytics } from '../services/api';
+import StatCard from '../components/StatCard';
+import ProgressBar from '../components/ProgressBar';
+import { PageSkeleton } from '../components/Skeleton';
 
 export default function Analytics() {
   const [salesData, setSalesData] = useState<any>(null);
   const [projectsData, setProjectsData] = useState<any>(null);
   const [clientsData, setClientsData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadData();
-  }, []);
 
   const loadData = async () => {
     try {
@@ -29,6 +28,10 @@ export default function Analytics() {
     }
   };
 
+  useEffect(() => {
+    loadData();
+  }, []);
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', { 
       style: 'currency', 
@@ -39,7 +42,7 @@ export default function Analytics() {
   };
 
   if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+    return <PageSkeleton />;
   }
 
   return (
@@ -50,42 +53,30 @@ export default function Analytics() {
       </div>
 
       <div className="grid grid-4" style={{ marginBottom: '2rem' }}>
-        <div className="card stats-card">
-          <div className="stats-icon primary">
-            <DollarSign size={24} />
-          </div>
-          <div>
-            <div className="stats-value">{formatCurrency(salesData?.totalPipeline || 0)}</div>
-            <div className="stats-label">Total Pipeline</div>
-          </div>
-        </div>
-        <div className="card stats-card">
-          <div className="stats-icon success">
-            <TrendingUp size={24} />
-          </div>
-          <div>
-            <div className="stats-value">{salesData?.winRate || 0}%</div>
-            <div className="stats-label">Win Rate</div>
-          </div>
-        </div>
-        <div className="card stats-card">
-          <div className="stats-icon warning">
-            <FolderKanban size={24} />
-          </div>
-          <div>
-            <div className="stats-value">{projectsData?.avgCompletion || 0}%</div>
-            <div className="stats-label">Avg Completion</div>
-          </div>
-        </div>
-        <div className="card stats-card">
-          <div className="stats-icon primary">
-            <Users size={24} />
-          </div>
-          <div>
-            <div className="stats-value">{clientsData?.avgHealthScore || 0}</div>
-            <div className="stats-label">Avg Health Score</div>
-          </div>
-        </div>
+        <StatCard 
+          icon={<DollarSign size={24} />}
+          value={formatCurrency(salesData?.totalPipeline || 0)}
+          label="Total Pipeline"
+          variant="primary"
+        />
+        <StatCard 
+          icon={<TrendingUp size={24} />}
+          value={`${salesData?.winRate || 0}%`}
+          label="Win Rate"
+          variant="success"
+        />
+        <StatCard 
+          icon={<FolderKanban size={24} />}
+          value={`${projectsData?.avgCompletion || 0}%`}
+          label="Avg Completion"
+          variant="warning"
+        />
+        <StatCard 
+          icon={<Users size={24} />}
+          value={clientsData?.avgHealthScore || 0}
+          label="Avg Health Score"
+          variant="primary"
+        />
       </div>
 
       <div className="grid grid-2">
@@ -93,9 +84,9 @@ export default function Analytics() {
           <div className="card-header">
             <h3 className="card-title">Sales Pipeline</h3>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div className="flex flex-col gap-3">
             {salesData?.pipelineByStage?.map((stage: any) => (
-              <div key={stage.stage} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div key={stage.stage} className="flex items-center gap-4">
                 <div style={{ width: 100, fontSize: '0.875rem' }}>
                   {stage.stage.replace('_', ' ')}
                 </div>
@@ -133,9 +124,9 @@ export default function Analytics() {
           <div className="card-header">
             <h3 className="card-title">Project Status</h3>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div className="flex flex-col gap-3">
             {projectsData?.projectsByStatus?.map((status: any) => (
-              <div key={status.status} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={status.status} className="flex justify-between items-center">
                 <span style={{ fontSize: '0.875rem' }}>{status.status.replace('_', ' ')}</span>
                 <span style={{ 
                   background: 'var(--background)', 
@@ -157,9 +148,9 @@ export default function Analytics() {
           <div className="card-header">
             <h3 className="card-title">Client Distribution by Industry</h3>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div className="flex flex-col gap-3">
             {clientsData?.clientsByIndustry?.slice(0, 5).map((item: any, index: number) => (
-              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div key={index} className="flex items-center gap-4">
                 <div style={{ width: 120, fontSize: '0.875rem' }}>{item.industry}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ 
@@ -187,9 +178,9 @@ export default function Analytics() {
           <div className="card-header">
             <h3 className="card-title">Client Lifecycle</h3>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div className="flex flex-col gap-3">
             {clientsData?.clientsByStage?.map((stage: any) => (
-              <div key={stage.stage} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={stage.stage} className="flex justify-between items-center">
                 <span style={{ fontSize: '0.875rem' }}>{stage.stage}</span>
                 <span style={{ 
                   background: 'var(--background)', 

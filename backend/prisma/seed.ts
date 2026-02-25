@@ -1,4 +1,4 @@
-import { PrismaClient } from '../src/generated/prisma';
+import { PrismaClient, LeadStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -205,7 +205,7 @@ async function main() {
         companySize: '201-500',
         leadScore: 65,
         scoreTier: 'Warm',
-        status: 'QUALIFICATION'
+        status: LeadStatus.QUALIFIED
       },
       {
         ownerId: salesRep.id,
@@ -217,7 +217,7 @@ async function main() {
         companySize: '1001-5000',
         leadScore: 82,
         scoreTier: 'Hot',
-        status: 'DISCOVERY'
+        status: LeadStatus.CONTACTED
       }
     ],
     skipDuplicates: true

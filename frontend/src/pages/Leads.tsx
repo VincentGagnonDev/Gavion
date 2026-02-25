@@ -1,14 +1,25 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Plus, TrendingUp } from 'lucide-react';
 import { leads } from '../services/api';
+import type { Lead } from '../types';
+import SearchBar from '../components/SearchBar';
+import DataTable from '../components/DataTable';
+import Badge from '../components/Badge';
+import EmptyState from '../components/EmptyState';
+import { PageSkeleton } from '../components/Skeleton';
 
 export default function Leads() {
-  const [leadsList, setLeadsList] = useState<any[]>([]);
+  const [leadsList, setLeadsList] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
-    loadLeads();
+    const timer = setTimeout(() => {
+      loadLeads();
+    }, 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const loadLeads = async () => {
@@ -22,29 +33,75 @@ export default function Leads() {
     }
   };
 
-  const getScoreBadge = (tier: string) => {
-    const colors: Record<string, string> = {
-      Hot: 'badge-danger',
-      Warm: 'badge-warning',
-      Cold: 'badge-info'
-    };
-    return colors[tier] || 'badge-info';
+  const getScoreBadgeVariant = (tier: string) => {
+    switch (tier) {
+      case 'HOT': return 'danger';
+      case 'WARM': return 'warning';
+      case 'COLD': return 'info';
+      default: return 'default';
+    }
   };
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      NEW: 'badge-info',
-      CONTACTED: 'badge-warning',
-      QUALIFIED: 'badge-success',
-      CONVERTED: 'badge-success',
-      LOST: 'badge-danger',
-      UNQUALIFIED: 'badge-danger'
-    };
-    return colors[status] || 'badge-info';
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'NEW':
+      case 'CONTACTED':
+        return 'info';
+      case 'QUALIFIED':
+      case 'CONVERTED':
+        return 'success';
+      case 'LOST':
+      case 'UNQUALIFIED':
+        return 'danger';
+      default:
+        return 'default';
+    }
   };
+
+  const columns = [
+    { key: 'companyName', header: 'Company' },
+    { 
+      key: 'contactName',
+      header: 'Contact',
+      render: (lead: Lead) => (
+        <div>
+          <div>{lead.contactName}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{lead.contactEmail}</div>
+        </div>
+      )
+    },
+    { key: 'source', header: 'Source' },
+    { key: 'industry', header: 'Industry', render: (lead: Lead) => lead.industry || '-' },
+    {
+      key: 'leadScore',
+      header: 'Score',
+      render: (lead: Lead) => (
+        <div className="flex items-center gap-2">
+          <TrendingUp size={14} />
+          <Badge variant={getScoreBadgeVariant(lead.scoreTier)}>
+            {lead.scoreTier} ({lead.leadScore})
+          </Badge>
+        </div>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (lead: Lead) => (
+        <Badge variant={getStatusBadgeVariant(lead.status)}>
+          {lead.status}
+        </Badge>
+      )
+    },
+    {
+      key: 'owner',
+      header: 'Owner',
+      render: (lead: Lead) => `${lead.owner?.firstName || ''} ${lead.owner?.lastName || ''}`
+    }
+  ];
 
   if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+    return <PageSkeleton />;
   }
 
   return (
@@ -54,71 +111,34 @@ export default function Leads() {
           <h1 className="page-title">Leads</h1>
           <p className="page-subtitle">Track and manage your sales leads</p>
         </div>
-        <button className="btn btn-primary">
-          <Plus size={18} />
-          Add Lead
-        </button>
+         <button className="btn btn-primary" onClick={() => navigate('/leads/new')}>
+           <Plus size={18} />
+           Add Lead
+         </button>
       </div>
 
-      <div className="search-bar">
-        <Search size={18} style={{ position: 'absolute', margin: '12px', color: 'var(--text-muted)' }} />
-        <input
-          type="text"
-          className="search-input"
-          style={{ paddingLeft: '40px' }}
-          placeholder="Search leads..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <SearchBar 
+          value={search} 
+          onChange={setSearch} 
+          placeholder="Search leads..." 
         />
       </div>
 
       <div className="card">
         {leadsList.length > 0 ? (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Company</th>
-                <th>Contact</th>
-                <th>Source</th>
-                <th>Industry</th>
-                <th>Score</th>
-                <th>Status</th>
-                <th>Owner</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leadsList.map(lead => (
-                <tr key={lead.id}>
-                  <td style={{ fontWeight: 500 }}>{lead.companyName}</td>
-                  <td>
-                    <div>{lead.contactName}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{lead.contactEmail}</div>
-                  </td>
-                  <td>{lead.source}</td>
-                  <td>{lead.industry || '-'}</td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <TrendingUp size={14} />
-                      <span className={`badge ${getScoreBadge(lead.scoreTier)}`}>
-                        {lead.scoreTier} ({lead.leadScore})
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`badge ${getStatusBadge(lead.status)}`}>
-                      {lead.status}
-                    </span>
-                  </td>
-                  <td>{lead.owner?.firstName} {lead.owner?.lastName}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+           <DataTable 
+             columns={columns}
+             data={leadsList}
+             onRowClick={(lead) => navigate(`/leads/${lead.id}`)}
+           />
         ) : (
-          <div className="empty-state">
-            <TrendingUp size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-            <p>No leads found</p>
-          </div>
+            <EmptyState 
+              icon={<TrendingUp size={48} />}
+              title="No leads found"
+              description="Start by adding your first lead."
+              action={<button className="btn btn-primary" onClick={() => navigate('/leads/new')}>Add Lead</button>}
+            />
         )}
       </div>
     </div>

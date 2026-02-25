@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Plus, FolderKanban } from 'lucide-react';
 import { projects } from '../services/api';
+import type { Project, ProjectStatus } from '../types';
+import SearchBar from '../components/SearchBar';
+import Badge from '../components/Badge';
+import ProgressBar from '../components/ProgressBar';
+import EmptyState from '../components/EmptyState';
+import DataTable from '../components/DataTable';
+import { PageSkeleton } from '../components/Skeleton';
 
-const statusLabels: Record<string, string> = {
+const statusLabels: Record<ProjectStatus, string> = {
   NOT_STARTED: 'Not Started',
   INITIATION: 'Initiation',
   DISCOVERY: 'Discovery',
@@ -16,14 +24,42 @@ const statusLabels: Record<string, string> = {
   CANCELLED: 'Cancelled'
 };
 
+const getStatusBadgeVariant = (status: ProjectStatus) => {
+  switch (status) {
+    case 'NOT_STARTED':
+    case 'INITIATION':
+    case 'DISCOVERY':
+      return 'info';
+    case 'DESIGN':
+    case 'DEVELOPMENT':
+    case 'DEPLOYMENT':
+      return 'warning';
+    case 'OPTIMIZATION':
+    case 'HANDOVER':
+    case 'COMPLETED':
+      return 'success';
+    case 'ON_HOLD':
+    case 'CANCELLED':
+      return 'danger';
+    default:
+      return 'default';
+  }
+};
+
+const getHealthColor = (health: string) => {
+  switch (health) {
+    case 'GREEN': return 'var(--success)';
+    case 'YELLOW': return 'var(--warning)';
+    case 'RED': return 'var(--danger)';
+    default: return 'var(--border)';
+  }
+};
+
 export default function Projects() {
-  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [projectsList, setProjectsList] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    loadProjects();
-  }, [search]);
+  const navigate = useNavigate();
 
   const loadProjects = async () => {
     try {
@@ -36,34 +72,63 @@ export default function Projects() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      NOT_STARTED: 'badge-info',
-      INITIATION: 'badge-info',
-      DISCOVERY: 'badge-info',
-      DESIGN: 'badge-warning',
-      DEVELOPMENT: 'badge-warning',
-      DEPLOYMENT: 'badge-warning',
-      OPTIMIZATION: 'badge-success',
-      HANDOVER: 'badge-success',
-      COMPLETED: 'badge-success',
-      ON_HOLD: 'badge-danger',
-      CANCELLED: 'badge-danger'
-    };
-    return colors[status] || 'badge-info';
-  };
+  useEffect(() => {
+    const timer = setTimeout(loadProjects, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  const getHealthBadge = (health: string) => {
-    const colors: Record<string, string> = {
-      GREEN: 'badge-success',
-      YELLOW: 'badge-warning',
-      RED: 'badge-danger'
-    };
-    return colors[health] || 'badge-info';
-  };
+  const columns = [
+    { key: 'name', header: 'Project' },
+    { 
+      key: 'client',
+      header: 'Client',
+      render: (project: Project) => project.client?.name || '-'
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (project: Project) => (
+        <Badge variant={getStatusBadgeVariant(project.status)}>
+          {statusLabels[project.status]}
+        </Badge>
+      )
+    },
+    {
+      key: 'healthStatus',
+      header: 'Health',
+      render: (project: Project) => (
+        <Badge variant={
+          project.healthStatus === 'GREEN' ? 'success' :
+          project.healthStatus === 'YELLOW' ? 'warning' : 'danger'
+        }>
+          {project.healthStatus}
+        </Badge>
+      )
+    },
+    {
+      key: 'completionPercentage',
+      header: 'Progress',
+      render: (project: Project) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <ProgressBar percent={project.completionPercentage} variant="default" />
+          <span style={{ fontSize: '0.75rem' }}>{project.completionPercentage}%</span>
+        </div>
+      )
+    },
+    {
+      key: 'projectManager',
+      header: 'Manager',
+      render: (project: Project) => `${project.projectManager?.firstName || ''} ${project.projectManager?.lastName || ''}`
+    },
+    {
+      key: 'endDate',
+      header: 'End Date',
+      render: (project: Project) => project.endDate ? new Date(project.endDate).toLocaleDateString() : '-'
+    }
+  ];
 
   if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+    return <PageSkeleton />;
   }
 
   return (
@@ -73,82 +138,34 @@ export default function Projects() {
           <h1 className="page-title">Projects</h1>
           <p className="page-subtitle">Track AI integration project progress</p>
         </div>
-        <button className="btn btn-primary">
-          <Plus size={18} />
-          New Project
-        </button>
+         <button className="btn btn-primary" onClick={() => navigate('/projects/new')}>
+           <Plus size={18} />
+           New Project
+         </button>
       </div>
 
-      <div className="search-bar">
-        <Search size={18} style={{ position: 'absolute', margin: '12px', color: 'var(--text-muted)' }} />
-        <input
-          type="text"
-          className="search-input"
-          style={{ paddingLeft: '40px' }}
-          placeholder="Search projects..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <SearchBar 
+          value={search} 
+          onChange={setSearch} 
+          placeholder="Search projects..." 
         />
       </div>
 
       <div className="card">
         {projectsList.length > 0 ? (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Client</th>
-                <th>Status</th>
-                <th>Health</th>
-                <th>Progress</th>
-                <th>Manager</th>
-                <th>End Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {projectsList.map(project => (
-                <tr key={project.id}>
-                  <td style={{ fontWeight: 500 }}>{project.name}</td>
-                  <td>{project.client?.name}</td>
-                  <td>
-                    <span className={`badge ${getStatusBadge(project.status)}`}>
-                      {statusLabels[project.status]}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge ${getHealthBadge(project.healthStatus)}`}>
-                      {project.healthStatus}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ 
-                        width: 60, 
-                        height: 6, 
-                        background: 'var(--border)', 
-                        borderRadius: 3,
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{ 
-                          width: `${project.completionPercentage}%`, 
-                          height: '100%', 
-                          background: project.healthStatus === 'GREEN' ? 'var(--success)' : project.healthStatus === 'YELLOW' ? 'var(--warning)' : 'var(--danger)'
-                        }} />
-                      </div>
-                      <span style={{ fontSize: '0.75rem' }}>{project.completionPercentage}%</span>
-                    </div>
-                  </td>
-                  <td>{project.projectManager?.firstName} {project.projectManager?.lastName}</td>
-                  <td>{project.endDate ? new Date(project.endDate).toLocaleDateString() : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+           <DataTable 
+             columns={columns}
+             data={projectsList}
+             onRowClick={(project) => navigate(`/projects/${project.id}`)}
+           />
         ) : (
-          <div className="empty-state">
-            <FolderKanban size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-            <p>No projects found</p>
-          </div>
+          <EmptyState 
+            icon={<FolderKanban size={48} />}
+            title="No projects found"
+            description="Start by creating your first project."
+            action={<button className="btn btn-primary" onClick={() => navigate('/projects/new')}>New Project</button>}
+          />
         )}
       </div>
     </div>

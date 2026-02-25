@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Headphones, AlertCircle, Clock, CheckCircle } from 'lucide-react';
 import { tickets } from '../services/api';
+import type { Ticket, TicketStatus, TicketSeverity } from '../types';
+import SearchBar from '../components/SearchBar';
+import Badge from '../components/Badge';
+import StatCard from '../components/StatCard';
+import EmptyState from '../components/EmptyState';
+import DataTable from '../components/DataTable';
+import { PageSkeleton } from '../components/Skeleton';
 
-const severityColors: Record<string, string> = {
+const severityColors: Record<TicketSeverity, string> = {
   CRITICAL: 'var(--danger)',
   HIGH: '#f97316',
   MEDIUM: 'var(--warning)',
@@ -10,13 +18,10 @@ const severityColors: Record<string, string> = {
 };
 
 export default function Tickets() {
-  const [ticketsList, setTicketsList] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [ticketsList, setTicketsList] = useState<Ticket[]>([]);
+  const [stats, setStats] = useState<{ openTickets: number; bySeverity: Record<string, number>; byStatus: Record<string, number> }>({ openTickets: 0, bySeverity: {}, byStatus: {} });
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadData();
-  }, []);
+  const navigate = useNavigate();
 
   const loadData = async () => {
     try {
@@ -33,30 +38,89 @@ export default function Tickets() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      NEW: 'badge-danger',
-      ASSIGNED: 'badge-warning',
-      IN_PROGRESS: 'badge-warning',
-      PENDING_CLIENT: 'badge-info',
-      RESOLVED: 'badge-success',
-      CLOSED: 'badge-success'
-    };
-    return colors[status] || 'badge-info';
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const getStatusBadgeVariant = (status: TicketStatus) => {
+    switch (status) {
+      case 'NEW':
+        return 'danger';
+      case 'ASSIGNED':
+      case 'IN_PROGRESS':
+        return 'warning';
+      case 'PENDING_CLIENT':
+        return 'info';
+      case 'RESOLVED':
+      case 'CLOSED':
+        return 'success';
+      default:
+        return 'default';
+    }
   };
 
-  const getSeverityBadge = (severity: string) => {
-    const colors: Record<string, string> = {
-      CRITICAL: 'badge-danger',
-      HIGH: 'badge-warning',
-      MEDIUM: 'badge-info',
-      LOW: 'badge-success'
-    };
-    return colors[severity] || 'badge-info';
+  const getSeverityBadgeVariant = (severity: TicketSeverity) => {
+    switch (severity) {
+      case 'CRITICAL': return 'danger';
+      case 'HIGH': return 'warning';
+      case 'MEDIUM': return 'info';
+      case 'LOW': return 'success';
+      default: return 'default';
+    }
   };
+
+  const columns = [
+    {
+      key: 'id',
+      header: 'Ticket #',
+      render: (ticket: Ticket) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
+          {ticket.id.substring(0, 8)}
+        </span>
+      )
+    },
+    { key: 'title', header: 'Title' },
+    { 
+      key: 'client',
+      header: 'Client',
+      render: (ticket: Ticket) => ticket.client?.name || '-'
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      render: (ticket: Ticket) => ticket.type?.replace('_', ' ') || '-'
+    },
+    {
+      key: 'severity',
+      header: 'Severity',
+      render: (ticket: Ticket) => (
+        <Badge variant={getSeverityBadgeVariant(ticket.severity)}>
+          {ticket.severity}
+        </Badge>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (ticket: Ticket) => (
+        <Badge variant={getStatusBadgeVariant(ticket.status)}>
+          {ticket.status.replace('_', ' ')}
+        </Badge>
+      )
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      render: (ticket: Ticket) => (
+        <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+          {new Date(ticket.createdAt).toLocaleDateString()}
+        </span>
+      )
+    }
+  ];
 
   if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+    return <PageSkeleton />;
   }
 
   return (
@@ -66,96 +130,52 @@ export default function Tickets() {
           <h1 className="page-title">Support Tickets</h1>
           <p className="page-subtitle">Manage client support requests</p>
         </div>
-        <button className="btn btn-primary">
-          <Plus size={18} />
-          New Ticket
-        </button>
+         <button className="btn btn-primary" onClick={() => navigate('/tickets/new')}>
+           <Plus size={18} />
+           New Ticket
+         </button>
       </div>
 
       <div className="grid grid-4" style={{ marginBottom: '1.5rem' }}>
-        <div className="card stats-card">
-          <div className="stats-icon danger">
-            <AlertCircle size={24} />
-          </div>
-          <div>
-            <div className="stats-value">{stats?.openTickets || 0}</div>
-            <div className="stats-label">Open Tickets</div>
-          </div>
-        </div>
-        <div className="card stats-card">
-          <div className="stats-icon warning">
-            <Clock size={24} />
-          </div>
-          <div>
-            <div className="stats-value">{stats?.bySeverity?.CRITICAL || 0}</div>
-            <div className="stats-label">Critical</div>
-          </div>
-        </div>
-        <div className="card stats-card">
-          <div className="stats-icon primary">
-            <Headphones size={24} />
-          </div>
-          <div>
-            <div className="stats-value">{stats?.bySeverity?.HIGH || 0}</div>
-            <div className="stats-label">High Priority</div>
-          </div>
-        </div>
-        <div className="card stats-card">
-          <div className="stats-icon success">
-            <CheckCircle size={24} />
-          </div>
-          <div>
-            <div className="stats-value">{stats?.byStatus?.RESOLVED || 0}</div>
-            <div className="stats-label">Resolved</div>
-          </div>
-        </div>
+        <StatCard 
+          icon={<AlertCircle size={24} />}
+          value={stats.openTickets || 0}
+          label="Open Tickets"
+          variant="danger"
+        />
+        <StatCard 
+          icon={<Clock size={24} />}
+          value={stats.bySeverity?.CRITICAL || 0}
+          label="Critical"
+          variant="warning"
+        />
+        <StatCard 
+          icon={<Headphones size={24} />}
+          value={stats.bySeverity?.HIGH || 0}
+          label="High Priority"
+          variant="primary"
+        />
+        <StatCard 
+          icon={<CheckCircle size={24} />}
+          value={stats.byStatus?.RESOLVED || 0}
+          label="Resolved"
+          variant="success"
+        />
       </div>
 
       <div className="card">
         {ticketsList.length > 0 ? (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Ticket #</th>
-                <th>Title</th>
-                <th>Client</th>
-                <th>Type</th>
-                <th>Severity</th>
-                <th>Status</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ticketsList.map(ticket => (
-                <tr key={ticket.id}>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
-                    {ticket.ticketNumber}
-                  </td>
-                  <td style={{ fontWeight: 500 }}>{ticket.title}</td>
-                  <td>{ticket.client?.name}</td>
-                  <td>{ticket.type?.replace('_', ' ')}</td>
-                  <td>
-                    <span className={`badge ${getSeverityBadge(ticket.severity)}`}>
-                      {ticket.severity}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge ${getStatusBadge(ticket.status)}`}>
-                      {ticket.status?.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-                    {new Date(ticket.createdAt).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+           <DataTable 
+             columns={columns}
+             data={ticketsList}
+             onRowClick={(ticket) => navigate(`/tickets/${ticket.id}`)}
+           />
         ) : (
-          <div className="empty-state">
-            <Headphones size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-            <p>No tickets found</p>
-          </div>
+          <EmptyState 
+            icon={<Headphones size={48} />}
+            title="No tickets found"
+            description="All caught up!"
+          />
         )}
       </div>
     </div>

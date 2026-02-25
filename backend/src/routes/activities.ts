@@ -1,8 +1,30 @@
 import { Router, Response, NextFunction } from 'express';
-import { db } from '../../config/database';
-import { authenticate, AuthRequest } from '../../middleware/auth';
+import { db } from '../config/database';
+import { authenticate, AuthRequest, authorizeResource } from '../middleware/auth';
+import { param, body, validationResult } from 'express-validator';
 
 const router = Router();
+
+const validateActivityId = param('id').isUUID();
+
+const validateActivityCreate = [
+  body('type').trim().notEmpty().withMessage('Activity type is required'),
+  body('subject').trim().notEmpty().withMessage('Subject is required'),
+  body('description').optional().trim(),
+  body('scheduledAt').optional().isISO8601(),
+  body('completedAt').optional().isISO8601(),
+  body('entityType').optional().isIn(['lead', 'opportunity', 'contact', 'project', 'ticket', 'activity']),
+  body('entityId').optional().isUUID(),
+];
+
+const validateActivityUpdate = [
+  validateActivityId,
+  body('type').optional().trim(),
+  body('subject').optional().trim(),
+  body('description').optional().trim(),
+  body('scheduledAt').optional().isISO8601(),
+  body('completedAt').optional().isISO8601(),
+];
 
 router.use(authenticate);
 
@@ -50,7 +72,11 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   }
 });
 
-router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/:id', 
+  validateActivityId,
+  authenticate,
+  authorizeResource('Activity', 'ownerId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const activity = await db.activity.findUnique({
       where: { id: req.params.id },
@@ -68,7 +94,10 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
   }
 });
 
-router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/', 
+  authenticate,
+  validateActivityCreate,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { leadId, opportunityId, contactId, type, subject, description, 
       scheduledAt, completedAt, durationMinutes, outcome, sentiment, keyTopics } = req.body;
@@ -92,7 +121,11 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
   }
 });
 
-router.put('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.put('/:id', 
+  validateActivityUpdate,
+  authenticate,
+  authorizeResource('Activity', 'ownerId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { type, subject, description, scheduledAt, completedAt, 
       durationMinutes, outcome, sentiment, keyTopics } = req.body;
@@ -113,7 +146,11 @@ router.put('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
   }
 });
 
-router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.delete('/:id', 
+  validateActivityId,
+  authenticate,
+  authorizeResource('Activity', 'ownerId'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await db.activity.delete({ where: { id: req.params.id } });
     res.json({ message: 'Activity deleted' });

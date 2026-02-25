@@ -1,8 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Plus, DollarSign } from 'lucide-react';
 import { opportunities } from '../services/api';
+import type { Opportunity, OpportunityStage } from '../types';
+import SearchBar from '../components/SearchBar';
+import Badge from '../components/Badge';
+import EmptyState from '../components/EmptyState';
+import DataTable from '../components/DataTable';
+import { PageSkeleton } from '../components/Skeleton';
 
-const stageLabels: Record<string, string> = {
+const stageLabels: Record<OpportunityStage, string> = {
   LEAD_INGESTION: 'Lead',
   QUALIFICATION: 'Qualification',
   DISCOVERY: 'Discovery',
@@ -13,20 +20,29 @@ const stageLabels: Record<string, string> = {
   CLOSED_LOST: 'Lost'
 };
 
+const stageColors: Record<OpportunityStage, string> = {
+  LEAD_INGESTION: '#94a3b8',
+  QUALIFICATION: '#60a5fa',
+  DISCOVERY: '#34d399',
+  SOLUTION_DESIGN: '#818cf8',
+  PROPOSAL: '#fbbf24',
+  NEGOTIATION: '#f97316',
+  CLOSED_WON: '#10b981',
+  CLOSED_LOST: '#ef4444'
+};
+
 export default function OpportunitiesPage() {
-  const [oppsList, setOppsList] = useState<any[]>([]);
+  const [oppsList, setOppsList] = useState<Opportunity[]>([]);
   const [pipeline, setPipeline] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'pipeline'>('pipeline');
-
-  useEffect(() => {
-    loadData();
-  }, []);
+  const [search, setSearch] = useState('');
+  const navigate = useNavigate();
 
   const loadData = async () => {
     try {
       const [listData, pipelineData] = await Promise.all([
-        opportunities.getAll({ limit: 50 }),
+        opportunities.getAll({ search, limit: 50 }),
         opportunities.getPipeline()
       ]);
       setOppsList(listData.opportunities || []);
@@ -38,26 +54,58 @@ export default function OpportunitiesPage() {
     }
   };
 
+  useEffect(() => {
+    const timer = setTimeout(loadData, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
   };
 
-  const getStageColor = (stage: string) => {
-    const colors: Record<string, string> = {
-      LEAD_INGESTION: '#94a3b8',
-      QUALIFICATION: '#60a5fa',
-      DISCOVERY: '#34d399',
-      SOLUTION_DESIGN: '#818cf8',
-      PROPOSAL: '#fbbf24',
-      NEGOTIATION: '#f97316',
-      CLOSED_WON: '#10b981',
-      CLOSED_LOST: '#ef4444'
-    };
-    return colors[stage] || '#94a3b8';
+  const getStageBadgeVariant = (stage: OpportunityStage) => {
+    switch (stage) {
+      case 'CLOSED_WON': return 'success';
+      case 'CLOSED_LOST': return 'danger';
+      default: return 'info';
+    }
   };
 
+  const columns = [
+    { key: 'name', header: 'Opportunity' },
+    { 
+      key: 'client',
+      header: 'Client',
+      render: (opp: Opportunity) => opp.client?.name || '-'
+    },
+    {
+      key: 'stage',
+      header: 'Stage',
+      render: (opp: Opportunity) => (
+        <Badge variant={getStageBadgeVariant(opp.stage)}>
+          {stageLabels[opp.stage]}
+        </Badge>
+      )
+    },
+    {
+      key: 'estimatedValue',
+      header: 'Value',
+      render: (opp: Opportunity) => formatCurrency(opp.estimatedValue)
+    },
+    {
+      key: 'probability',
+      header: 'Probability',
+      render: (opp: Opportunity) => `${opp.probability}%`
+    },
+    {
+      key: 'expectedCloseDate',
+      header: 'Expected Close',
+      render: (opp: Opportunity) => opp.expectedCloseDate ? new Date(opp.expectedCloseDate).toLocaleDateString() : '-'
+    }
+  ];
+
   if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+    return <PageSkeleton />;
   }
 
   return (
@@ -67,49 +115,50 @@ export default function OpportunitiesPage() {
           <h1 className="page-title">Sales Pipeline</h1>
           <p className="page-subtitle">Manage opportunities and track your sales progress</p>
         </div>
-        <button className="btn btn-primary">
-          <Plus size={18} />
-          New Opportunity
-        </button>
+         <button className="btn btn-primary" onClick={() => navigate('/opportunities/new')}>
+           <Plus size={18} />
+           New Opportunity
+         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        <button 
-          className={`btn ${view === 'pipeline' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setView('pipeline')}
-        >
-          Pipeline View
-        </button>
-        <button 
-          className={`btn ${view === 'list' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setView('list')}
-        >
-          List View
-        </button>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <div className="flex gap-2 mb-4">
+          <button 
+            className={`btn ${view === 'pipeline' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setView('pipeline')}
+          >
+            Pipeline View
+          </button>
+          <button 
+            className={`btn ${view === 'list' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setView('list')}
+          >
+            List View
+          </button>
+        </div>
+        <SearchBar value={search} onChange={setSearch} placeholder="Search opportunities..." />
       </div>
 
       {view === 'pipeline' ? (
-        <div style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem' }}>
+        <div className="flex gap-4 overflow-x-auto pb-4">
           {pipeline.map((stage) => (
             <div 
               key={stage.stage}
+              className="card"
               style={{ 
-                minWidth: 280, 
-                background: 'var(--surface)', 
-                borderRadius: '0.75rem', 
-                border: '1px solid var(--border)',
+                minWidth: 280,
                 padding: '1rem'
               }}
             >
-              <div style={{ 
+               <div style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
                 gap: '0.5rem',
                 marginBottom: '1rem',
                 paddingBottom: '0.75rem',
-                borderBottom: `3px solid ${getStageColor(stage.stage)}`
+                borderBottom: `3px solid ${stageColors[stage.stage as OpportunityStage]}`
               }}>
-                <h3 style={{ fontSize: '0.875rem', fontWeight: 600 }}>{stageLabels[stage.stage]}</h3>
+                <h3 style={{ fontSize: '0.875rem', fontWeight: 600 }}>{stageLabels[stage.stage as OpportunityStage]}</h3>
                 <span style={{ 
                   background: 'var(--background)', 
                   padding: '0.125rem 0.5rem', 
@@ -128,70 +177,46 @@ export default function OpportunitiesPage() {
                 Weighted: <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{formatCurrency(stage.weightedValue)}</span>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {stage.opportunities?.slice(0, 5).map((opp: any) => (
-                  <div 
-                    key={opp.id}
-                    style={{ 
-                      padding: '0.75rem', 
-                      background: 'var(--background)', 
-                      borderRadius: '0.5rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <div style={{ fontWeight: 500, fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-                      {opp.name}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      <span>{opp.client?.name || 'No client'}</span>
-                      <span>{formatCurrency(opp.estimatedValue)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+               <div className="flex flex-col gap-2">
+                 {stage.opportunities?.slice(0, 5).map((opp: Opportunity) => (
+                   <div 
+                     key={opp.id}
+                     className="card"
+                     style={{ 
+                       padding: '0.75rem',
+                       cursor: 'pointer'
+                     }}
+                     onClick={() => navigate(`/opportunities/${opp.id}`)}
+                   >
+                     <div style={{ fontWeight: 500, fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+                       {opp.name}
+                     </div>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                       <span>{opp.client?.name || 'No client'}</span>
+                       <span>{formatCurrency(opp.estimatedValue)}</span>
+                     </div>
+                   </div>
+                 ))}
+               </div>
             </div>
           ))}
         </div>
       ) : (
         <div className="card">
-          {oppsList.length > 0 ? (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Opportunity</th>
-                  <th>Client</th>
-                  <th>Stage</th>
-                  <th>Value</th>
-                  <th>Probability</th>
-                  <th>Expected Close</th>
-                </tr>
-              </thead>
-              <tbody>
-                {oppsList.map(opp => (
-                  <tr key={opp.id}>
-                    <td style={{ fontWeight: 500 }}>{opp.name}</td>
-                    <td>{opp.client?.name || '-'}</td>
-                    <td>
-                      <span className={`badge ${
-                        opp.stage === 'CLOSED_WON' ? 'badge-success' :
-                        opp.stage === 'CLOSED_LOST' ? 'badge-danger' : 'badge-info'
-                      }`}>
-                        {stageLabels[opp.stage]}
-                      </span>
-                    </td>
-                    <td>{formatCurrency(opp.estimatedValue)}</td>
-                    <td>{opp.probability}%</td>
-                    <td>{opp.expectedCloseDate ? new Date(opp.expectedCloseDate).toLocaleDateString() : '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">
-              <DollarSign size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-              <p>No opportunities found</p>
-            </div>
-          )}
+           {oppsList.length > 0 ? (
+             <DataTable 
+               columns={columns}
+               data={oppsList}
+               onRowClick={(opp) => navigate(`/opportunities/${opp.id}`)}
+             />
+           ) : (
+             <EmptyState 
+               icon={<DollarSign size={48} />}
+               title="No opportunities found"
+               description="Create your first opportunity to start tracking."
+               action={<button className="btn btn-primary" onClick={() => navigate('/opportunities/new')}>New Opportunity</button>}
+             />
+           )}
         </div>
       )}
     </div>

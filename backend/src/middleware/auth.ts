@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { db } from '../config/database';
-import { UserRole } from '../generated/prisma';
+import { UserRole } from '@prisma/client';
 
 export interface AuthUser {
   id: string;
@@ -9,10 +9,13 @@ export interface AuthUser {
   role: UserRole;
   firstName: string;
   lastName: string;
+  clientId?: string;
 }
 
 export interface AuthRequest extends Request {
   user?: AuthUser;
+  params: { [key: string]: string | undefined };
+  query: { [key: string]: string | undefined };
 }
 
 export const authenticate = async (
@@ -40,7 +43,8 @@ export const authenticate = async (
         role: true,
         firstName: true,
         lastName: true,
-        isActive: true
+        isActive: true,
+        clientId: true
       }
     });
 
@@ -53,7 +57,8 @@ export const authenticate = async (
       email: user.email,
       role: user.role,
       firstName: user.firstName,
-      lastName: user.lastName
+      lastName: user.lastName,
+      clientId: user.clientId || undefined
     };
 
     next();
@@ -86,4 +91,61 @@ export const isProjectUser = (req: AuthRequest): boolean => {
 
 export const isAdmin = (req: AuthRequest): boolean => {
   return req.user?.role === 'SYSTEM_ADMIN';
+};
+
+export const isClientUser = (req: AuthRequest): boolean => {
+  return req.user?.role === 'CLIENT_USER' || req.user?.role === 'CLIENT_ADMIN';
+};
+
+export const isClientAdmin = (req: AuthRequest): boolean => {
+  return req.user?.role === 'CLIENT_ADMIN';
+};
+
+export const authorizeResource = (resourceName: string, ownerIdField: string = 'ownerId', clientIdField?: string) => {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const resourceId = req.params.id;
+      
+      if (!resourceId) {
+        return res.status(400).json({ error: 'Resource ID required' });
+      }
+
+      // Check if user has elevated permissions
+      const elevatedRoles = ['SYSTEM_ADMIN', 'SALES_DIRECTOR', 'PROJECT_DIRECTOR'];
+      if (elevatedRoles.includes(req.user?.role || '')) {
+        return next();
+      }
+
+      // Fetch the resource
+      const resource = await (db as any)[resourceName.toLowerCase()].findUnique({
+        where: { id: resourceId },
+        select: {
+          id: true,
+          [ownerIdField]: true,
+          ...(clientIdField && { [clientIdField]: true })
+        }
+      });
+
+      if (!resource) {
+        return res.status(404).json({ error: 'Resource not found' });
+      }
+
+      // Check ownership
+      const isOwner = resource[ownerIdField] === req.user?.id;
+      
+      // Check client-based access for CLIENT_USER
+      let hasClientAccess = false;
+      if (req.user?.role === 'CLIENT_USER' && clientIdField) {
+        hasClientAccess = resource[clientIdField] === req.user?.clientId;
+      }
+
+      if (!isOwner && !hasClientAccess) {
+        return res.status(403).json({ error: 'No access to this resource' });
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 };

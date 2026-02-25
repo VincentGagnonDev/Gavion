@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
-import { db } from '../../config/database';
-import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
+import { db } from '../config/database';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 

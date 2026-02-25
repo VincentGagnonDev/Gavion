@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
-import { db } from '../../config/database';
-import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
-import { OpportunityStage, ProjectStatus } from '../../generated/prisma';
+import { db } from '../config/database';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { OpportunityStage, ProjectStatus } from '@prisma/client';
 
 const router = Router();
 
